@@ -13,6 +13,8 @@ import RxSwift
 
 struct APIUtil {
     static var httpsHeaders: HTTPHeaders = ["Content-Type": "application/json"]
+    
+    fileprivate static var request: Alamofire.Request?
 }
 
 extension APIUtil {
@@ -45,6 +47,68 @@ extension APIUtil {
             self.uploadRequest(observer: observer, url: url, method: method, uploadDatas: uploadDatas, parameters: parameters, returnType: returnType)
             return Disposables.create()
         })
+    }
+    
+    /// 下载文件
+    /// - Parameters:
+    ///   - url: 下载地址
+    ///   - method: 请求方式
+    ///   - parameters: 参数
+    ///   - encoding: 传参方式
+    ///   - destination: 保存地址（默认Document）
+    ///   - progressChange: 进度条
+    ///   - completion: 完成之后
+    ///   - cancelledData: 取消或者失败之后返回data
+    static func downloadData(with url: String, method: HTTPMethod = .get, parameters: Parameters? = nil, encoding: ParameterEncoding = URLEncoding.queryString, destination: @escaping DownloadRequest.DownloadFileDestination = DownloadRequest.suggestedDownloadDestination(), progressChange: ((_ progress: Double) -> Void)?, completion: ((_ path: String?) -> Void)?, cancelledData: ((_ data: Data?) -> Void)?) {
+        headerSupplement()
+        self.request = Alamofire.download(url, method: method, parameters: parameters, encoding: encoding, headers: httpsHeaders, to: destination).downloadProgress { (progress) in
+            progressChange?(progress.fractionCompleted)
+        }.responseData { (response: DownloadResponse<Data>) in
+            switch response.result {
+            case .success(_):
+                completion?(response.destinationURL?.path)
+            case .failure(let error):
+                dprint(item: error)
+                cancelledData?(response.resumeData)
+            }
+        }
+    }
+    
+    /// 断点续传
+    /// - Parameters:
+    ///   - data: 需要续传的数据
+    ///   - destination: 地址
+    ///   - progressChange: 进度条
+    ///   - completion: 完成之后
+    ///   - cancelledData: 失败或者取消返回data
+    static func resumingData(with data: Data, destination: @escaping DownloadRequest.DownloadFileDestination = DownloadRequest.suggestedDownloadDestination(), progressChange: ((_ progress: Double) -> Void)?, completion: ((_ path: String?) -> Void)?, cancelledData: ((_ data: Data?) -> Void)?) {
+        /// 续传
+        self.request = Alamofire.download(resumingWith: data, to: destination).downloadProgress { (progress) in
+            progressChange?(progress.fractionCompleted)
+        }.responseData { (response: DownloadResponse<Data>) in
+            switch response.result {
+            case .success(_):
+                completion?(response.destinationURL?.path)
+            case .failure(let error):
+                dprint(item: error)
+                cancelledData?(response.resumeData)
+            }
+        }
+    }
+    
+    /// 取消下载
+    static func cancelData() {
+        self.request?.cancel()
+    }
+    
+    /// 暂停下载
+    static func suspendData() {
+        self.request?.suspend()
+    }
+    
+    /// 继续下载
+    static func resumeData() {
+        self.request?.resume()
     }
 }
 
